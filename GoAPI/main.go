@@ -3,15 +3,21 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
+
 	// "net/http"
+	"os"
+
 	"github.com/gofiber/fiber/v2" //import fiber
-	"strconv" //for converting string to int
+	"github.com/gofiber/jwt/v2"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/joho/godotenv" //import godotenv for loading environment variables
 )
 
 //this is like using pure http package
 //w = res and r = req
 // func helloHandler(w http.ResponseWriter, r *http.Request) {
-	
+
 // 	if r.URL.Path != "/greet" {
 // 		http.Error(w, "404 not found", http.StatusNotFound)
 // 		return
@@ -40,7 +46,11 @@ type Book struct {
 var books []Book
 
 func main() {
-	// fmt.Println("Starting Go API server...")
+
+	// Load environment variables from .env file
+	if err := godotenv.Load(); err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 	
 	// http.HandleFunc("/greet", helloHandler)
 	
@@ -83,6 +93,14 @@ func main() {
 	// 	return c.JSON(books) //returning books as JSON
 	// });
 
+	//login
+	app.Post("/login", login)
+
+	//Middleware for JWT authentication
+	app.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")), //get JWT secret from environment
+	}))
+
 	//or you can use a separate function for the handler
 	app.Get("/books", getBooks) //using a separate function for the handler
 	app.Get("/books/:id", getBookByID) 
@@ -96,6 +114,10 @@ func main() {
 	//delete a book
 	app.Delete("/books/:id",deleteBook )
 	
+	//get environment variable
+	app.Get("/env", getEnv)
+
+	
 	
 	
 	port := ":8080"
@@ -105,91 +127,52 @@ func main() {
 	}
 }
 
-func getBooks(c *fiber.Ctx) error {
-	return c.JSON(books) //returning books as JSON
+func getEnv(c *fiber.Ctx) error {
+	// Get the SECRET environment variable
+	secret := os.Getenv("SECRET")
+	if secret == "" {
+		return c.Status(fiber.StatusInternalServerError).SendString("SECRET not set")
+	}
+	return c.JSON(fiber.Map{
+		"SECRET" : secret,
+	})
 }
 
-func getBookByID(c *fiber.Ctx) error {
-	id := c.Params("id") //getting the id (string) from the URL
-	
-	// Convert the id to an integer
-	bookID, err := strconv.Atoi(id) //converting string to int
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+//dummy user for login
+var memberUser = User{
+	Username: "admin",
+	Password: "password",
+}
+
+func login(c *fiber.Ctx) error {
+	user := new(User)
+	if err := c.BodyParser(user); err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+	}
+
+	if user.Username != memberUser.Username && user.Password != memberUser.Password {
+		return fiber.ErrUnauthorized
+	}
+
+	// Generate JWT token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": user.Username,
+		"exp":      jwt.TimeFunc().Add(24 * time.Hour).Unix(), // token expires in 24 hours
+	})
+
+	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error()) //returning 400 if conversion fails
+		return c.Status(fiber.StatusInternalServerError).SendString("Could not generate token")
 	}
 
-	// Loop through the books to find the one with the matching ID
-	// _ = index and book variables
-	for _, book := range books {
-		if book.ID == bookID {
-			return c.JSON(book) //returning the book as JSON if found
-		}
-	}
-	
-	return c.Status(fiber.StatusNotFound).SendString("Book not found") //returning 404 if book not found
+	return c.JSON(fiber.Map{
+		"message": "Login successful",
+		"username": user.Username,
+		"token": tokenString,
+	})
 }
-
-func createBook(c *fiber.Ctx) error {
-	
-	newBook := new(Book) // Create a new Book instance to hold the incoming data, this is like getting pointer to a Book struct
-
-	// Parse the JSON body into the newBook variable
-	if err := c.BodyParser(newBook); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error()) //returning 400 if parsing fails
-	}
-	// Assign an ID to the new book (incremental)
-	newBook.ID = len(books) + 1
-
-	// Append the new book to the books slice
-	books = append(books, *newBook) //append only accepts a value, so we need to send only the value of newBook, not the pointer
-
-	return c.Status(fiber.StatusCreated).JSON(newBook) //returning 201 and the new book as JSON
-}
-
-func updateBook(c *fiber.Ctx) error {
-	id := c.Params("id") //getting the id (string) from the URL
-	
-	// Convert the id to an integer
-	bookID, err := strconv.Atoi(id) //converting string to int
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error()) //returning 400 if conversion fails
-	}
-
-	bookUpdate := new(Book) // Create a new Book instance to hold the incoming data for update
-	if err := c.BodyParser(bookUpdate); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error()) //returning 400 if parsing fails
-	}
-
-	// Find the book by ID
-	for index, book := range books {
-		if book.ID == bookID {
-			// Update the book's details
-			books[index].Title = bookUpdate.Title
-			books[index].Author = bookUpdate.Author
-			return c.JSON(books[index]) //returning the updated book as JSON
-		}
-	}
-	
-	return c.Status(fiber.StatusNotFound).SendString("Book not found") //returning 404 if book not found
-}
-
-func deleteBook(c *fiber.Ctx) error {
-	id:= c.Params("id");
-	// Convert the id to an integer
-	bookId , err := strconv.Atoi(id) 
-	if err != nil { 
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error()) //returning 400 if conversion fails
-	}
-
-	// Loop through the books to find the one with the matching ID
-	for idx , book := range  books {
-		if book.ID == bookId{
-			// Remove the book from the slice by appending the parts before and after it
-			books = append(books[:idx], books[idx+1:]...)
-			return c.SendString("Book deleted successfully") //returning success message
-		}
-	}
-
-	return c.Status(fiber.StatusNotFound).SendString("Book not found") //returning 404 if book not found
-}
-	
