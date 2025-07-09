@@ -39,3 +39,21 @@ func deleteBook(db *gorm.DB, id uint) error {
 	// result := db.Unscoped().Delete(&Book{}, id) // hard delete the book by ID
 	return result.Error
 }
+
+func getBookByName(db *gorm.DB, name string) (*Book ,error) { 
+	var book Book
+	result := db.Where("name = ?", name).First(&book) // Find the book by name
+	if result.Error != nil {
+		return &Book{}, result.Error
+	}
+	return &book, nil
+}
+
+func getAllBooks(db *gorm.DB) ([]Book, error) {
+	var books []Book
+	result := db.Find(&books) // Find all books
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return books, nil
+}

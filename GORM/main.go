@@ -61,7 +61,7 @@ func main() {
 	}
 
 	//get a book by ID
-	bookID := 5 // Assuming the book ID is 1
+	bookID := 11 // Assuming the book ID is 1
 	retrievedBook, err := getBookById(db, uint(bookID))
 	if err != nil {
 		log.Fatalf("Error retrieving book: %v", err)
@@ -88,5 +88,18 @@ func main() {
 	}
 	log.Println("All operations completed successfully!")
 
+	//get a book by name
+	bookName := "Go Programming"
+	if b, err := getBookByName(db, bookName); err != nil {
+		log.Fatalf("Error retrieving book by name: %v", err)
+	} else {
+		log.Printf("Retrieved Book by Name: %+v\n", b)
+	}
 
+	//get all books
+	if books, err := getAllBooks(db); err != nil {
+		log.Fatalf("Error retrieving all books: %v", err)
+	} else {
+		log.Printf("Retrieved All Books: %+v\n", books)
+	}
 }
