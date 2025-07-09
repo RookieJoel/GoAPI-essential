@@ -1,10 +1,12 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/lib/pq" // PostgreSQL driver
 	"fmt"
 	"log"
-	"database/sql"
-	_ "github.com/lib/pq" 
+	"github.com/gofiber/fiber/v2"
+	"strconv"
 )
 
 const (
@@ -38,130 +40,143 @@ func main() {
 
   fmt.Println("Successfully connected!")
 
+  app := fiber.New()
 
-  //create a product
-  err = createProduct(&Product{
-	Name:  "Sample Product",
-	Price: 100,
-  })
-  if err != nil {
-	log.Fatalf("Error creating product: %v", err)
-  } else {
-	log.Println("Product created successfully")
-  }
+  app.Get("/", func(c *fiber.Ctx) error {
+	return c.SendString("Welcome to the GoDB API!")
+  }) 
 
-  //get a product by ID
-  productID := 1 // Assuming we want to get the product with ID 1
-  product, err := getProductByID(productID)
-  if err != nil {
-	log.Fatalf("Error getting product: %v", err)
-  } else {
-	log.Printf("Product retrieved: %+v", product)
-  }
+  //get products using Fiber
+  app.Get("/products/:id", getProductsHandler)
 
-  //get all products
-  products, err := getAllProducts()
-  if err != nil {
-	log.Fatalf("Error getting all products: %v", err)
-  } else {
-	log.Println("All products retrieved:")
-	for _, p := range products {
-	  log.Printf("Product ID: %d, Name: %s, Price: %d", p.ID, p.Name, p.Price)
-	}
-  }
+  //get all products using Fiber
+  app.Get("/products", getAllProductsGHandler)
 
-  //update a product
-  err = updateProduct(productID, &Product{
-	Name:  "Updated Product",
-	Price: 150,
-  })
-  if err != nil {
-	log.Fatalf("Error updating product: %v", err)
-  } else {
-	log.Println("Product updated successfully")
-  }
+  //create a new product using Fiber
+  app.Post("/products", createProductsHandler)
 
-  //delete a product
-  err = deleteProduct(1)
-  if err != nil {
-	log.Fatalf("Error deleting product: %v", err)
-  } else {
-	log.Println("Product deleted successfully")
-  }
+  // update a product using Fiber
+  app.Put("/products/:id", updateProductsHandler)
+
+  // delete a product using Fiber
+  app.Delete("/products/:id", deleteProductsHandler)
+
+  app.Listen(":8080")
+
+//   //create a product
+//   err = createProduct(&Product{
+// 	Name:  "Sample Product",
+// 	Price: 100,
+//   })
+//   if err != nil {
+// 	log.Fatalf("Error creating product: %v", err)
+//   } else {
+// 	log.Println("Product created successfully")
+//   }
+
+//   //get a product by ID
+//   productID := 1 // Assuming we want to get the product with ID 1
+//   product, err := getProductByID(productID)
+//   if err != nil {
+// 	log.Fatalf("Error getting product: %v", err)
+//   } else {
+// 	log.Printf("Product retrieved: %+v", product)
+//   }
+
+//   //get all products
+//   products, err := getAllProducts()
+//   if err != nil {
+// 	log.Fatalf("Error getting all products: %v", err)
+//   } else {
+// 	log.Println("All products retrieved:")
+// 	for _, p := range products {
+// 	  log.Printf("Product ID: %d, Name: %s, Price: %d", p.ID, p.Name, p.Price)
+// 	}
+//   }
+
+//   //update a product
+//   err = updateProduct(productID, &Product{
+// 	Name:  "Updated Product",
+// 	Price: 150,
+//   })
+//   if err != nil {
+// 	log.Fatalf("Error updating product: %v", err)
+//   } else {
+// 	log.Println("Product updated successfully")
+//   }
+
+//   //delete a product
+//   err = deleteProduct(1)
+//   if err != nil {
+// 	log.Fatalf("Error deleting product: %v", err)
+//   } else {
+// 	log.Println("Product deleted successfully")
+//   }
+
+//=================================================================
 
 }
 
-type Product struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Price int `json:"price"`
-}
-
-func createProduct(product *Product) error {
-	// Insert product into the database
-	// query := `INSERT INTO products (name, price) VALUES ($1, $2) RETURNING id`
-	_ , err := db.Exec("INSERT INTO products (name, price) VALUES ($1, $2)", product.Name, product.Price)
+func getAllProductsGHandler(c *fiber.Ctx) error {
+	products, err := getAllProducts()
 	if err != nil {
-		return fmt.Errorf("could not create product: %v", err)
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
-	return nil
-
+	return c.JSON(products)
 }
 
-func getProductByID(id int) (*Product, error) {
-	var product Product
-	// query := `SELECT id, name, price FROM products WHERE id = $1`
-	row := db.QueryRow("SELECT id, name, price FROM products WHERE id = $1", id)
-	err := row.Scan(&product.ID, &product.Name, &product.Price)
+func getProductsHandler(c *fiber.Ctx) error { 
+	//get product by ID from the URL parameter
+	pid , err := strconv.Atoi(c.Params("id"))
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no product found with ID %d", id)
-		}
-		return nil, fmt.Errorf("could not get product: %v", err)
+		return c.SendStatus(fiber.StatusBadRequest)
 	}
-	return &product, nil
+
+	product , err := getProductByID(pid)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).SendString(err.Error())
+	}
+	return c.JSON(product)
 }
 
-func getAllProducts() ([]Product, error) {
-	var products []Product
-	// query := `SELECT id, name, price FROM products`
-	rows, err := db.Query("SELECT id, name, price FROM products")
-	if err != nil {
-		return nil, fmt.Errorf("could not get products: %v", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var product Product
-		if err := rows.Scan(&product.ID, &product.Name, &product.Price); err != nil {
-			return nil, fmt.Errorf("could not scan product: %v", err)
-		}
-		products = append(products, product)
+func createProductsHandler(c *fiber.Ctx) error {
+	p := new(Product)
+	if err := c.BodyParser(p); err != nil {
+		return c.SendStatus(fiber.StatusBadRequest)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating over products: %v", err)
+	if err := createProduct(p); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 
-	return products, nil
+	return c.Status(fiber.StatusCreated).JSON(p)
 }
 
-func updateProduct(id int, product *Product) error {
-	// Update product in the database
-	// query := `UPDATE products SET name = $1, price = $2 WHERE id = $3`
-	_, err := db.Exec("UPDATE products SET name = $1, price = $2 WHERE id = $3", product.Name, product.Price, id)
+func updateProductsHandler(c *fiber.Ctx) error {
+	pid , err := strconv.Atoi(c.Params("id"))
 	if err != nil {
-		return fmt.Errorf("could not update product: %v", err)
+		return c.SendStatus(fiber.StatusBadRequest)
 	}
-	return nil
+	p := new(Product)
+	// Parse the request body into the Product struct
+	if err := c.BodyParser(p); err != nil {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
+
+	if err := updateProduct(pid, p); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+
+	return c.Status(fiber.StatusOK).JSON(p)
 }
 
-func deleteProduct(id int) error {
-	// Delete product from the database
-	// query := `DELETE FROM products WHERE id = $1`
-	_, err := db.Exec("DELETE FROM products WHERE id = $1", id)
+func deleteProductsHandler(c *fiber.Ctx) error {
+	pid , err := strconv.Atoi(c.Params("id"))
 	if err != nil {
-		return fmt.Errorf("could not delete product: %v", err)
+		return c.SendStatus(fiber.StatusBadRequest)
 	}
-	return nil
+	if err := deleteProduct(pid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+	return c.SendStatus(fiber.StatusNoContent) // 204 No Content
 }
