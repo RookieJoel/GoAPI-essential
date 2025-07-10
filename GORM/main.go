@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm/logger"
 	"os"
 	"time"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 // Database connection details
@@ -19,6 +20,37 @@ const (
 	password = "mypassword"
 	dbname   = "mydatabase"
 )
+
+func authMiddleware(c *fiber.Ctx) error {
+	// Middleware to check for JWT token in cookies
+	cookie  := c.Cookies("jwt_token") // Get the JWT token from cookies with the name "jwt_token"
+	//for tsting only 
+	jwtSecret := []byte("secret_key") // Secret key for signing the JWT token
+
+	//check if the token is valid 
+	token , err:= jwt.ParseWithClaims(cookie, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil // Return the secret key for validation
+	})
+
+	if err != nil {
+		log.Println("Error parsing JWT token:", err)
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Unauthorized",
+		})
+	}
+
+	// Check if the token is valid and extract claims
+	if claims, ok := token.Claims.(*jwt.MapClaims); ok && token.Valid {
+		log.Println("JWT token is valid. Claims:", claims)
+	} else {
+		log.Println("Invalid JWT token")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Unauthorized",
+		})
+	}
+
+	return c.Next() // Proceed to the next handler
+}
 
 func main() {
 
@@ -46,7 +78,7 @@ func main() {
 	log.Println("Successfully connected to the database!")
 	
 	// Migrate the schema
-	err = db.AutoMigrate(&Book{}) // Automatically create the table based on the Book struct
+	err = db.AutoMigrate(&Book{}, &User{}) // Automatically create the table based on the Book struct
 	// // !!! It WON'T delete unused columns. you need to manually implement it.
 	// if err != nil {
 	// 	log.Fatalf("Error migrating database: %v", err)
@@ -106,6 +138,55 @@ func main() {
 	// ========== Fiber Setup ==========
 	app := fiber.New()
 
+	// ========== User Routes ==========
+	app.Post("/users/register" , func (c *fiber.Ctx) error {
+		user := new(User)
+		if err := c.BodyParser(user); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid request body",
+			})
+		}
+		if err := createUSer(db, user); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"message": "User registered successfully",
+			"user":    user,
+		})
+	})
+
+	app.Post("/users/login", func (c *fiber.Ctx) error {
+		user := new(User)
+		if err := c.BodyParser(user); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid request body",
+			})
+		}
+		token, err := loginUser(db, user)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid email or password",
+			})
+		}
+
+		//set cookie with JWT token
+		c.Cookie(&fiber.Cookie{
+			Name:     "jwt_token",
+			Value:    token,
+			Expires:  time.Now().Add(72 * time.Hour), // Set expiration to 72 hours
+			HTTPOnly: true, // Prevent JavaScript access to the cookie
+		})
+
+		return c.JSON(fiber.Map{
+			"message": "Login successful",
+		})
+	})
+
+	app.Use(authMiddleware) // Apply the authentication middleware to all routes
+
+	// ========== Book Routes ==========
 	//get all books
 	app.Get("/books", func (c *fiber.Ctx) error {
 		books , err := getAllBooks(db)
@@ -152,6 +233,7 @@ func main() {
 			"book":    newBook,
 	})
 	})
+
 
 	app.Listen(":8080")
 
