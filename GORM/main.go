@@ -79,6 +79,10 @@ func main() {
 	
 	// Migrate the schema
 	err = db.AutoMigrate(&Book{}, &User{}) // Automatically create the table based on the Book struct
+
+	if err != nil {
+		panic("failed to migrate database: " + err.Error()) //panic use to stop the program if the migration fails
+	}
 	// // !!! It WON'T delete unused columns. you need to manually implement it.
 	// if err != nil {
 	// 	log.Fatalf("Error migrating database: %v", err)
