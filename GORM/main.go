@@ -238,6 +238,49 @@ func main() {
 	})
 	})
 
+	//update a book`
+	app.Put("/books/:id", func (c *fiber.Ctx) error {
+		bid, err := c.ParamsInt("id")
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid book ID",
+			})
+		}
+		var updatedBook Book
+		if err := c.BodyParser(&updatedBook); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid request body",
+			})
+		}
+		updatedBook.ID = uint(bid) // Set the ID for the book to update
+		if err := updateBook(db, &updatedBook); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		return c.JSON(fiber.Map{
+			"message": "Book updated successfully",
+			"book":    updatedBook,
+		})
+	})
+
+	//delete a book
+	app.Delete("/books/:id", func (c *fiber.Ctx) error {
+		bid, err := c.ParamsInt("id")
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid book ID",
+			})
+		}
+		if err := deleteBook(db, uint(bid)); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		return c.JSON(fiber.Map{
+			"message": "Book deleted successfully",
+		})
+	})
 
 	app.Listen(":8080")
 
